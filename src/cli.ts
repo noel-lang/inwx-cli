@@ -476,8 +476,8 @@ async function cmdDomainInfo(name: string): Promise<void> {
       console.log(`  ${dim(k.padEnd(14))} ${String(v)}`);
     };
     line('Status', info.status);
-    line('Angelegt', (info.crDate ?? '').slice(0, 10));
-    line('Läuft ab', (info.exDate ?? '').slice(0, 10));
+    line('Angelegt', String(info.crDate ?? '').slice(0, 10));
+    line('Läuft ab', String(info.exDate ?? '').slice(0, 10));
     line('Registrant', info.registrant);
     line('Admin-C', info.admin);
     line('Tech-C', info.tech);

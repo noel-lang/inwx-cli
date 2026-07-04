@@ -234,9 +234,9 @@ export function contactTable(contacts: Contact[]): string {
 export function domainTable(domains: DomainListEntry[]): string {
   if (!domains.length) return dim('  Keine Domains gefunden.');
   const rows = domains.map((d) => ({
-    domain: d.domain ?? '',
-    status: d.status ?? '',
-    exDate: (d.exDate ?? '').slice(0, 10),
+    domain: String(d.domain ?? ''),
+    status: String(d.status ?? ''),
+    exDate: String(d.exDate ?? '').slice(0, 10),
   }));
 
   const w = {
