@@ -130,7 +130,7 @@ Profile werden in `~/.inwx/config.json` mit Dateirechten `0600` abgelegt:
 | `inwx domain info <name>`                          | Details zu einer eigenen Domain                |
 | `inwx domain buy <name>`                           | Domain registrieren (Standard: OT&E)           |
 | `inwx contact ls`                                  | Domain-Kontakte (Handles) auflisten            |
-| `inwx contact add`                                 | Kontakt interaktiv anlegen                     |
+| `inwx contact add`                                 | Kontakt anlegen (interaktiv oder per Flags)    |
 
 Globale Option `--ote` schaltet jeden Befehl auf das OT&E-Testsystem.
 
@@ -182,22 +182,26 @@ Registriert eine Domain über `domain.create`. Der Befehl ist bewusst mehrfach a
 # 1) Testkauf gegen OT&E (Standard, keine Kosten, keine echte Registrierung)
 inwx domain buy meine-idee.de --registrant 12345
 
-# 2) Nur validieren, ohne zu registrieren (testing=true)
+# 2) Non-interaktiv (Rückfrage überspringen), weiterhin OT&E
+inwx domain buy meine-idee.de --registrant 12345 --yes
+
+# 3) Nur validieren, ohne zu registrieren (testing=true)
 inwx domain buy meine-idee.de --registrant 12345 --dry-run
 
-# 3) Echter, kostenpflichtiger Kauf auf PROD (erfordert --yes-live + Tippbestätigung)
+# 4) Echter, kostenpflichtiger Kauf auf PROD (erfordert --yes-live + Tippbestätigung)
 inwx domain buy meine-idee.de --registrant 12345 --yes-live
 ```
 
-| Option                    | Default               | Beschreibung                                   |
-| ------------------------- | --------------------- | ---------------------------------------------- |
-| `--registrant <id>`       | –                     | Inhaber-Kontakt-ID (**Pflicht**)               |
-| `--period <dauer>`        | `1Y`                  | Registrierungsdauer, Format `\d+Y`             |
-| `--admin/--tech/--billing`| –                     | weitere Kontakt-Handles                        |
-| `--ns <liste>`            | `ns.inwx.de,ns2.inwx.de` | Nameserver (kommasepariert)                 |
-| `--renewal-mode <modus>`  | –                     | `AUTORENEW`, `AUTOEXPIRE`, `AUTODELETE`        |
-| `--dry-run`               | –                     | nur validieren (`testing=true`)                |
-| `--yes-live`              | –                     | echte PROD-Registrierung erlauben              |
+| Option                    | Default                  | Beschreibung                                   |
+| ------------------------- | ------------------------ | ---------------------------------------------- |
+| `--registrant <id>`       | –                        | Inhaber-Kontakt-ID (**Pflicht**)               |
+| `--period <dauer>`        | `1Y`                     | Registrierungsdauer, Format `\d+Y`             |
+| `--admin/--tech/--billing`| = `--registrant`         | weitere Kontakt-Handles (Default: Registrant)  |
+| `--ns <liste>`            | `ns.inwx.de,ns2.inwx.de` | Nameserver (kommasepariert)                    |
+| `--renewal-mode <modus>`  | –                        | `AUTORENEW`, `AUTOEXPIRE`, `AUTODELETE`        |
+| `--dry-run`               | –                        | nur validieren (`testing=true`)                |
+| `-y, --yes`               | –                        | Rückfrage überspringen (nur OT&E)              |
+| `--yes-live`              | –                        | echte PROD-Registrierung erlauben              |
 
 **Sicherheitsmodell:**
 
@@ -205,8 +209,10 @@ inwx domain buy meine-idee.de --registrant 12345 --yes-live
   dieses Flag technisch ausgeschlossen.
 - Vor dem Kauf zeigt der Befehl Verfügbarkeit und Preis aus `domain.check`. Ist die Domain nicht
   frei, bricht er ab.
-- Es folgt eine Bestätigung mit Preisanzeige. Bei `--yes-live` muss der Domainname zusätzlich
-  exakt eingetippt werden.
+- Es folgt eine Bestätigung mit Preisanzeige. `-y/--yes` überspringt diese Rückfrage **nur auf
+  OT&E**; bei `--yes-live` muss der Domainname trotzdem exakt eingetippt werden.
+- INWX verlangt alle vier Kontakt-Handles. Werden `--admin/--tech/--billing` nicht gesetzt,
+  übernimmt die CLI den Registranten.
 
 ## Kontakte
 
@@ -214,12 +220,65 @@ Domain-Registrierungen brauchen mindestens einen Inhaber-Kontakt (Handle).
 
 ```bash
 inwx contact ls     # contact.list: ID, Typ, Name, Firma, Ort, Land
-inwx contact add    # contact.create: interaktiv, gibt die neue Kontakt-ID aus
+
+# interaktiv (fragt alle Felder ab)
+inwx contact add
+
+# oder vollständig per Flags (scriptbar, non-interaktiv)
+inwx contact add \
+  --name "Max Inhaber" --street "Musterstr. 1" --pc 10115 --city Berlin --cc DE \
+  --email max@example.com --voice "+49.30123456"
 ```
 
-`contact add` fragt Typ (Person/Organisation/Rolle), Name, Firma (optional), Straße, PLZ, Ort,
-Ländercode (ISO 3166-1 alpha-2), E-Mail und Telefon ab, validiert Ländercode und E-Mail lokal und
-gibt am Ende die erzeugte Kontakt-ID für die Nutzung mit `domain buy --registrant` aus.
+`contact add` legt einen Kontakt über `contact.create` an und gibt die neue Kontakt-ID aus
+(direkt nutzbar als `domain buy --registrant <id>`). Werden **alle Pflichtfelder** als Flags
+übergeben (`--name`, `--street`, `--pc`, `--city`, `--email`, `--voice`), läuft der Befehl
+komplett ohne Prompts; sonst fragt er die fehlenden Felder interaktiv ab.
+
+| Flag                | Default    | Hinweis                                        |
+| ------------------- | ---------- | ---------------------------------------------- |
+| `--type`            | `person`   | `person` \| `org` \| `role`                    |
+| `--name`            | –          | Voller Name (Pflicht)                          |
+| `--org`             | –          | Firma / Organisation (optional)                |
+| `--street`          | –          | Straße und Hausnummer (Pflicht)                |
+| `--pc` / `--city`   | –          | PLZ / Ort (Pflicht)                            |
+| `--cc`              | `DE`       | Ländercode ISO 3166-1 alpha-2                  |
+| `--email`           | –          | E-Mail (Pflicht, lokal validiert)              |
+| `--voice`           | –          | Telefon im Format `+Ländercode.Nummer`         |
+
+**Telefonformat:** INWX erwartet `+Ländercode.Nummer` mit genau einem Punkt (z. B.
+`+49.30123456`). Die CLI normalisiert übliche Schreibweisen automatisch: aus `+49.30.999-8877`
+wird `+49.309998877`. Eine Nummer ganz ohne Punkt ist mehrdeutig und wird abgelehnt.
+
+## OT&E: Registrierung durchspielen
+
+Das OT&E-Testsystem (eigener Account auf [ote.inwx.com](https://ote.inwx.com)) eignet sich, um den
+kompletten Registrierungs-Weg gefahrlos zu proben:
+
+```bash
+inwx login --ote
+
+# 1) Verfügbarkeit über mehrere TLDs prüfen (read-only)
+inwx domain check codegeschichten.com codegeschichten.io codegeschichten.org \
+  codegeschichten.ai codegeschichten.ch codegeschichten.at --ote
+
+# 2) Preise ansehen
+inwx domain price codegeschichten.io --ote
+
+# 3) Inhaber-Kontakt anlegen (gibt eine Kontakt-ID zurück)
+inwx contact add --ote \
+  --name "Max Inhaber" --street "Musterstr. 1" --pc 10115 --city Berlin --cc DE \
+  --email max@example.com --voice "+49.30123456"
+
+# 4) Registrierung validieren bzw. auf OT&E durchspielen (buy ist ohne --yes-live immer OT&E)
+inwx domain buy codegeschichten.com --registrant <id> --dry-run   # nur validieren
+inwx domain buy codegeschichten.com --registrant <id> --yes       # OT&E-Registrierung
+```
+
+**Zum OT&E-Guthaben:** `domain.create` durchläuft auch im Test eine Abrechnungsprüfung. Hat der
+OT&E-Account kein Test-Guthaben, endet der Aufruf mit `Billing failure (Code 2104)`. Das ist kein
+CLI-Fehler, sondern ein Kontostand-Zustand; Test-Guthaben wird im OT&E-Panel aufgeladen. Die
+vorgelagerten Schritte (`check`, `price`, `contact add`) funktionieren unabhängig davon.
 
 ## DNS-Records
 
