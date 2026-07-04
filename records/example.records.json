@@ -1,0 +1,14 @@
+{
+  "domain": "example.com",
+  "records": [
+    { "name": "@",    "type": "A",     "content": "76.76.21.21",          "ttl": 3600 },
+    { "name": "www",  "type": "CNAME", "content": "cname.vercel-dns.com",  "ttl": 3600 },
+
+    { "name": "mail", "type": "MX",  "content": "feedback-smtp.eu-central-1.amazonses.com", "prio": 10, "ttl": 3600 },
+    { "name": "mail", "type": "TXT", "content": "v=spf1 include:amazonses.com ~all", "ttl": 3600 },
+
+    { "name": "token1._domainkey", "type": "CNAME", "content": "token1.dkim.amazonses.com", "ttl": 3600 },
+
+    { "name": "_dmarc", "type": "TXT", "content": "v=DMARC1; p=none; rua=mailto:dmarc@example.com", "ttl": 3600 }
+  ]
+}

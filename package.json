@@ -1,0 +1,44 @@
+{
+  "name": "inwx-cli",
+  "version": "0.1.0",
+  "description": "Schön designte CLI für INWX-DNS über die DomRobot-API, im Stil von vercel dns.",
+  "type": "module",
+  "bin": {
+    "inwx": "bin/inwx.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin",
+    "src",
+    "records/example.records.json"
+  ],
+  "scripts": {
+    "start": "node bin/inwx.js"
+  },
+  "keywords": [
+    "inwx",
+    "dns",
+    "domrobot",
+    "cli",
+    "nameserver",
+    "dns-records"
+  ],
+  "author": "Noel Lang",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/noel-lang/inwx-cli.git"
+  },
+  "homepage": "https://github.com/noel-lang/inwx-cli#readme",
+  "bugs": {
+    "url": "https://github.com/noel-lang/inwx-cli/issues"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "commander": "^12.1.0",
+    "otpauth": "^9.3.4",
+    "picocolors": "^1.1.1"
+  }
+}
