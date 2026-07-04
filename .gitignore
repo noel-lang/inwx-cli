@@ -19,3 +19,8 @@ npm-debug.log*
 .env
 .env.*
 *.local.json
+
+# docs (VitePress build + generierte Referenz)
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/reference/commands.md

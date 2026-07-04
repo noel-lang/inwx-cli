@@ -9,6 +9,8 @@ JSON-Beschreibung, mit vorgeschaltetem Änderungsplan und Dry-Run.
 In TypeScript geschrieben (strikt typisiert), im Stil von `vercel dns`. Inoffizielles
 Community-Projekt, nicht mit INWX affiliiert. MIT-lizenziert.
 
+📖 **Dokumentation:** <https://noel-lang.github.io/inwx-cli/> (automatisch aus dieser CLI generiert)
+
 ## Anforderungen
 
 - **Node.js ≥ 18** (nutzt das globale `fetch` und `Headers.getSetCookie`; empfohlen ≥ 20, getestet auf 22)

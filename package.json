@@ -20,7 +20,11 @@
     "start": "node dist/bin/inwx.js",
     "prepare": "npm run build",
     "pretest": "npm run build",
-    "test": "node --test dist/test/*.test.js"
+    "test": "node --test dist/test/*.test.js",
+    "docs:gen": "node scripts/gen-cli-docs.mjs",
+    "docs:dev": "npm run build && npm run docs:gen && vitepress dev docs",
+    "docs:build": "npm run build && npm run docs:gen && vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "keywords": [
     "inwx",
@@ -50,6 +54,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitepress": "^1.6.4"
   }
 }

@@ -794,7 +794,8 @@ async function cmdContactAdd(opts: ContactAddOpts = {}): Promise<void> {
 }
 
 /* ────────────────────────── Programm ────────────────────────── */
-export function run(argv: string[]): void {
+/** Konfiguriert das Command-Programm (ohne es auszuführen). Auch vom Doc-Generator genutzt. */
+export function buildProgram(): Command {
   program
     .name('inwx')
     .description('Schön designte CLI für INWX-Domains & -DNS (DomRobot-API).')
@@ -869,7 +870,11 @@ export function run(argv: string[]): void {
     .option('--voice <telefon>', 'Telefon international, z. B. +49.30123456')
     .action(cmdContactAdd);
 
-  program.parseAsync(argv).catch((e) => {
+  return program;
+}
+
+export function run(argv: string[]): void {
+  buildProgram().parseAsync(argv).catch((e) => {
     if (e instanceof ApiError) die(e.message);
     else die(e instanceof Error ? e.message : String(e));
   });
