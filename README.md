@@ -1,21 +1,25 @@
 # inwx-cli
 
-Kommandozeilen-Client für die DNS-Verwaltung bei [INWX](https://www.inwx.de) über die
-[DomRobot-API](https://www.inwx.de/en/help/apidoc). Unterstützt das Auflisten, Erstellen
-und Löschen einzelner Records sowie das deklarative, idempotente Ausrollen einer kompletten
-Zone aus einer JSON-Beschreibung, mit vorgeschaltetem Änderungsplan und Dry-Run.
+Kommandozeilen-Client für die Domain- und DNS-Verwaltung bei [INWX](https://www.inwx.de) über die
+[DomRobot-API](https://www.inwx.de/en/help/apidoc). Unterstützt Verfügbarkeits- und Preisabfragen,
+Domain-Registrierung, Kontakt-Handles sowie das Auflisten, Erstellen und Löschen einzelner
+DNS-Records und das deklarative, idempotente Ausrollen einer kompletten Zone aus einer
+JSON-Beschreibung, mit vorgeschaltetem Änderungsplan und Dry-Run.
 
-Inoffizielles Community-Projekt, nicht mit INWX affiliiert. MIT-lizenziert.
+In TypeScript geschrieben (strikt typisiert), im Stil von `vercel dns`. Inoffizielles
+Community-Projekt, nicht mit INWX affiliiert. MIT-lizenziert.
 
 ## Anforderungen
 
 - **Node.js ≥ 18** (nutzt das globale `fetch` und `Headers.getSetCookie`; empfohlen ≥ 20, getestet auf 22)
-- Ein INWX-Account mit aktiviertem API-Zugang. Optional ein separater
-  [OT&E-Testaccount](https://ote.inwx.com) für Trockenläufe.
+- Zum Bauen aus dem Quellcode: **TypeScript 5** (als devDependency enthalten, kein globales `tsc` nötig)
+- Ein INWX-Account mit aktiviertem API-Zugang. Für Trockenläufe von Domain-Registrierungen ein
+  separater [OT&E-Testaccount](https://ote.inwx.com) (eigene Registrierung, eigene Zugangsdaten).
 
 ## Installation
 
-Direkte Ausführung ohne Installation (npx, klont und installiert transient):
+Direkte Ausführung ohne Installation (npx klont, installiert transient und baut über den
+`prepare`-Hook automatisch `dist`):
 
 ```bash
 npx github:noel-lang/inwx-cli login
@@ -33,9 +37,24 @@ Lokale Entwicklung:
 ```bash
 git clone https://github.com/noel-lang/inwx-cli.git
 cd inwx-cli
-npm install
+npm install       # installiert Deps und baut via prepare-Hook nach dist/
 npm link          # registriert das `inwx`-Binary global
 ```
+
+## Build & Entwicklung
+
+Der Quellcode liegt in TypeScript unter `src/` und `bin/`, das ausführbare Ergebnis kompiliert
+`tsc` nach `dist/` (die einzige vom Binary genutzte Ausgabe, per `.gitignore` nicht eingecheckt).
+
+```bash
+npm run build     # tsc: src + bin + test -> dist/
+npm run dev -- domain check example.de   # baut und führt direkt aus (Args nach --)
+npm test          # baut und läuft node --test (ohne Netzwerk)
+```
+
+Der `prepare`-Hook baut `dist` automatisch bei `npm install` und bei Installation via
+`npx`/`npm install -g github:…`. Das Binary ist in `package.json` auf `dist/bin/inwx.js`
+verdrahtet; veröffentlicht wird nur `dist` plus die Beispiel-Zonendatei.
 
 ## Authentifizierung
 
@@ -46,7 +65,7 @@ die Zugangsdaten mit einem echten `account.login`-Aufruf und persistiert sie ers
 
 ```bash
 inwx login            # produktiv
-inwx login --ote      # gegen das OT&E-Testsystem
+inwx login --ote      # gegen das OT&E-Testsystem (separater Account, siehe unten)
 inwx whoami           # aktives Profil anzeigen
 inwx logout           # Profil entfernen
 ```
@@ -55,9 +74,9 @@ inwx logout           # Profil entfernen
 
 Ist auf dem Account 2FA aktiv, gibt es zwei Betriebsmodi:
 
-1. **Secret hinterlegen** – das Base32-TOTP-Secret (aus der 2FA-Einrichtung) wird gespeichert;
+1. **Secret hinterlegen:** das Base32-TOTP-Secret (aus der 2FA-Einrichtung) wird gespeichert;
    die CLI erzeugt gültige Codes selbst (RFC 6238, SHA-1, 6 Stellen, 30 s, via `otpauth`).
-2. **Interaktiv** – kein Secret gespeichert; jede authentifizierte Aktion fragt den aktuellen
+2. **Interaktiv:** kein Secret gespeichert; jede authentifizierte Aktion fragt den aktuellen
    6-stelligen Code ab.
 
 Intern wird `account.login` gefolgt von `account.unlock` mit dem generierten bzw. eingegebenen
@@ -90,25 +109,119 @@ Profile werden in `~/.inwx/config.json` mit Dateirechten `0600` abgelegt:
 Überschreiben das gespeicherte Profil und ermöglichen Betrieb ohne persistierte Datei
 (z. B. in CI):
 
-| Variable            | Zweck                                  |
-| ------------------- | -------------------------------------- |
-| `INWX_USER`         | Benutzername                           |
-| `INWX_PASSWORD`     | Passwort                               |
+| Variable            | Zweck                                     |
+| ------------------- | ----------------------------------------- |
+| `INWX_USER`         | Benutzername                              |
+| `INWX_PASSWORD`     | Passwort                                  |
 | `INWX_TOTP_SECRET`  | Base32-TOTP-Secret für die Code-Erzeugung |
 
 ## Befehle
 
 | Befehl                                             | Beschreibung                                   |
 | -------------------------------------------------- | ---------------------------------------------- |
-| `inwx login`                                       | Anmelden und Profil speichern                  |
-| `inwx logout`                                      | Gespeichertes Profil entfernen                 |
-| `inwx whoami`                                      | Aktives Profil anzeigen                        |
+| `inwx login` / `logout` / `whoami`                 | Anmelden, Profil entfernen, Profil anzeigen    |
 | `inwx dns ls <domain>`                             | Alle Records einer Zone auflisten              |
 | `inwx dns add <domain> <name> <type> <content>`    | Einzelnen Record anlegen                       |
 | `inwx dns rm <domain> <id>`                        | Record anhand seiner ID löschen                |
 | `inwx dns apply <datei>`                           | Zone deklarativ abgleichen                     |
+| `inwx domain check <name...>`                      | Verfügbarkeit prüfen (READ-ONLY)               |
+| `inwx domain price <name>`                         | Preisinfo zu Domain/TLD                        |
+| `inwx domain ls`                                   | Eigene Domains auflisten                       |
+| `inwx domain info <name>`                          | Details zu einer eigenen Domain                |
+| `inwx domain buy <name>`                           | Domain registrieren (Standard: OT&E)           |
+| `inwx contact ls`                                  | Domain-Kontakte (Handles) auflisten            |
+| `inwx contact add`                                 | Kontakt interaktiv anlegen                     |
 
 Globale Option `--ote` schaltet jeden Befehl auf das OT&E-Testsystem.
+
+## Domains
+
+### `domain check` (READ-ONLY)
+
+Prüft die Verfügbarkeit einer oder mehrerer Domains über `domain.check`. Vor dem API-Call
+wird jeder Name syntaktisch validiert (Label-Länge, erlaubte Zeichen, IDN/Punycode-Hinweis)
+und für einige TLDs ein Registrierungshinweis ausgegeben.
+
+```bash
+inwx domain check example.de
+inwx domain check meine-idee.de meine-idee.com meine-idee.io
+```
+
+Der `avail`-Code der API wird übersetzt:
+
+| avail | Anzeige    | Bedeutung                     |
+| ----- | ---------- | ----------------------------- |
+| `1`   | `frei`     | registrierbar                 |
+| `0`   | `vergeben` | bereits registriert           |
+| `2`   | `premium`  | frei, aber Premium-Preis      |
+| `-1`  | `ungültig` | ungültiger Name / nicht prüfbar |
+
+Sofern die API einen Preis mitliefert, wird er angezeigt.
+
+### `domain price`
+
+```bash
+inwx domain price example.de
+```
+
+Kombiniert den konkreten Domainpreis samt Verfügbarkeit aus `domain.check` mit der
+TLD-weiten Preisliste (Registrierung/Verlängerung/Transfer) aus `domain.getPrices`.
+
+### `domain ls` / `domain info`
+
+```bash
+inwx domain ls                 # eigene Domains (domain.list)
+inwx domain info example.de    # Status, Ablaufdatum, Handles, Nameserver (domain.info)
+```
+
+### `domain buy` (mit Sicherheitsnetz)
+
+Registriert eine Domain über `domain.create`. Der Befehl ist bewusst mehrfach abgesichert:
+
+```bash
+# 1) Testkauf gegen OT&E (Standard, keine Kosten, keine echte Registrierung)
+inwx domain buy meine-idee.de --registrant 12345
+
+# 2) Nur validieren, ohne zu registrieren (testing=true)
+inwx domain buy meine-idee.de --registrant 12345 --dry-run
+
+# 3) Echter, kostenpflichtiger Kauf auf PROD (erfordert --yes-live + Tippbestätigung)
+inwx domain buy meine-idee.de --registrant 12345 --yes-live
+```
+
+| Option                    | Default               | Beschreibung                                   |
+| ------------------------- | --------------------- | ---------------------------------------------- |
+| `--registrant <id>`       | –                     | Inhaber-Kontakt-ID (**Pflicht**)               |
+| `--period <dauer>`        | `1Y`                  | Registrierungsdauer, Format `\d+Y`             |
+| `--admin/--tech/--billing`| –                     | weitere Kontakt-Handles                        |
+| `--ns <liste>`            | `ns.inwx.de,ns2.inwx.de` | Nameserver (kommasepariert)                 |
+| `--renewal-mode <modus>`  | –                     | `AUTORENEW`, `AUTOEXPIRE`, `AUTODELETE`        |
+| `--dry-run`               | –                     | nur validieren (`testing=true`)                |
+| `--yes-live`              | –                     | echte PROD-Registrierung erlauben              |
+
+**Sicherheitsmodell:**
+
+- Ohne `--yes-live` läuft `buy` **immer** gegen OT&E. Ein `domain.create` gegen PROD ist ohne
+  dieses Flag technisch ausgeschlossen.
+- Vor dem Kauf zeigt der Befehl Verfügbarkeit und Preis aus `domain.check`. Ist die Domain nicht
+  frei, bricht er ab.
+- Es folgt eine Bestätigung mit Preisanzeige. Bei `--yes-live` muss der Domainname zusätzlich
+  exakt eingetippt werden.
+
+## Kontakte
+
+Domain-Registrierungen brauchen mindestens einen Inhaber-Kontakt (Handle).
+
+```bash
+inwx contact ls     # contact.list: ID, Typ, Name, Firma, Ort, Land
+inwx contact add    # contact.create: interaktiv, gibt die neue Kontakt-ID aus
+```
+
+`contact add` fragt Typ (Person/Organisation/Rolle), Name, Firma (optional), Straße, PLZ, Ort,
+Ländercode (ISO 3166-1 alpha-2), E-Mail und Telefon ab, validiert Ländercode und E-Mail lokal und
+gibt am Ende die erzeugte Kontakt-ID für die Nutzung mit `domain buy --registrant` aus.
+
+## DNS-Records
 
 ### `dns add`
 
@@ -190,37 +303,52 @@ inwx dns apply zone.json --yes       # ohne Rückfrage (CI/Automation)
 Der `--dry-run` liest die reale Zone (read-only) und ist damit ein gefahrloser Vorab-Check,
 auch ohne separaten OT&E-Account.
 
+## OT&E-Testsystem
+
+OT&E (Operational Test & Evaluation) ist die Sandbox von INWX und ein **eigenständiger Account**:
+Die Produktiv-Zugangsdaten funktionieren dort nicht. Für Trockenläufe von Registrierungen daher
+zuerst unter [ote.inwx.com](https://ote.inwx.com) registrieren, dann:
+
+```bash
+inwx login --ote                       # OT&E-Zugang speichern
+inwx domain check example.de --ote     # Verfügbarkeit im Testsystem
+inwx domain buy example.de --ote --registrant <id>   # Testkauf ohne Kosten
+```
+
+Ohne `--yes-live` läuft `domain buy` ohnehin gegen OT&E, `--ote` erzwingt es zusätzlich für alle
+übrigen Befehle.
+
 ## Verwendete DomRobot-API
 
 Die CLI spricht die DomRobot-API im JSON-RPC-Format an:
 
-| Umgebung | Endpoint                              |
-| -------- | ------------------------------------- |
-| `prod`   | `https://api.domrobot.com/jsonrpc/`   |
+| Umgebung | Endpoint                                |
+| -------- | --------------------------------------- |
+| `prod`   | `https://api.domrobot.com/jsonrpc/`     |
 | `ote`    | `https://api.ote.domrobot.com/jsonrpc/` |
 
 Genutzte Methoden: `account.login`, `account.unlock`, `account.logout`,
-`nameserver.info`, `nameserver.createRecord`, `nameserver.updateRecord`,
-`nameserver.deleteRecord`.
+`nameserver.info`, `nameserver.createRecord`, `nameserver.updateRecord`, `nameserver.deleteRecord`,
+`domain.check`, `domain.getPrices`, `domain.list`, `domain.info`, `domain.create`,
+`contact.list`, `contact.create`.
 
 Die Session wird über das von `account.login` gesetzte Cookie gehalten und bei Folge-Requests
 mitgesendet. Jede Antwort trägt einen numerischen `code`; `1000` bedeutet Erfolg, alles andere
 wird als Fehler mit Meldung und Code weitergereicht (z. B. `2200` = Authentifizierungsfehler).
 
-## Konfiguration & Exit-Codes
-
-- Konfigurationsverzeichnis: `~/.inwx/` (`config.json`, Modus `0600`)
-- Exit-Code `0` bei Erfolg, `1` bei Fehler (nicht angemeldet, API-Fehler, ungültige Eingabe)
-
 ## Projektstruktur
 
 ```
-bin/inwx.js          Einstiegspunkt (Shebang)
-src/cli.js           Commander-Verdrahtung + Command-Handler
-src/api.js           DomRobot-Client (JSON-RPC, Session, TOTP, Record-Methoden)
-src/config.js        Profil-/Credential-Verwaltung (~/.inwx)
-src/ui.js            Ausgabe (Farben, Tabelle, Plan-Diff)
+bin/inwx.ts          Einstiegspunkt (Shebang)
+src/cli.ts           Commander-Verdrahtung + Command-Handler
+src/api.ts           DomRobot-Client (JSON-RPC, Session, TOTP, Record-/Domain-/Kontakt-Methoden)
+src/config.ts        Profil-/Credential-Verwaltung (~/.inwx)
+src/ui.ts            Ausgabe (Farben, Tabellen, Plan-Diff)
+src/validate.ts      Validierung (Domain-Syntax, TLD-Ableitung, Periode, Ländercode)
+src/types.ts         Interfaces für DomRobot-Requests/-Responses, Config, Optionen
+test/*.test.ts       Unit-Tests (node --test, ohne Netzwerk)
 records/             Beispiel-Zonendatei
+dist/                Build-Ausgabe (nicht eingecheckt)
 ```
 
 ## Sicherheit
@@ -229,7 +357,20 @@ records/             Beispiel-Zonendatei
   nicht verschlüsselt. Für höhere Anforderungen Umgebungsvariablen nutzen.
 - Es werden keine Zugangsdaten geloggt oder an Dritte gesendet; einziger Kontakt ist die
   DomRobot-API.
-- Empfehlung: einen INWX-Sub-Account mit auf DNS beschränkten Rechten verwenden.
+- `domain buy` registriert standardmäßig nur auf OT&E; ein echter, kostenpflichtiger Kauf auf
+  PROD verlangt das explizite Flag `--yes-live` und eine Tippbestätigung des Domainnamens.
+- Empfehlung: einen INWX-Sub-Account mit auf DNS/Domains beschränkten Rechten verwenden.
+
+## Tests
+
+Netzwerkfreie Unit-Tests über das eingebaute `node --test`:
+
+```bash
+npm test
+```
+
+Abgedeckt: FQDN-Ableitung (`toFqdn`), TOTP-Generierung (RFC-6238-Vektoren),
+Domain-Validierung, TLD-Ableitung inkl. mehrteiliger Suffixe, Perioden- und Ländercode-Parsing.
 
 ## Roadmap
 
@@ -238,7 +379,9 @@ records/             Beispiel-Zonendatei
 - [ ] Eindeutiges Matching mehrfacher `TXT`/`MX`-Records in `apply`
 - [ ] `dns rm` anhand von Name/Typ statt nur per ID
 - [ ] Löschen nicht deklarierter Records in `apply` (`--prune`, opt-in)
-- [ ] Testabdeckung (API-Client, FQDN-Ableitung, Plan-Diff)
+- [x] Testabdeckung (FQDN-Ableitung, TOTP, Domain-Validierung)
+- [x] Domain-Verwaltung (`domain check/price/ls/info/buy`, `contact ls/add`)
+- [x] TypeScript-Umbau mit strikter Typisierung
 - [ ] Veröffentlichung auf npm (Namensverfügbarkeit prüfen) für `npx inwx-cli`
 - [ ] Optionale Credential-Ablage im OS-Keychain
 - [ ] Windows-Terminal verifizieren
