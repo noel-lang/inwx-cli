@@ -6,6 +6,7 @@ import {
   tldOf,
   parsePeriod,
   normalizeCountryCode,
+  normalizePhone,
   tldHints,
 } from '../src/validate.js';
 
@@ -78,4 +79,17 @@ test('normalizeCountryCode', () => {
 test('tldHints: .de liefert Hinweis, .com nicht', () => {
   assert.equal(tldHints('example.de').length, 1);
   assert.equal(tldHints('example.com').length, 0);
+});
+
+test('normalizePhone: kollabiert Mehrfach-Trenner zum INWX-Format', () => {
+  assert.equal(normalizePhone('+49.30.999-8877'), '+49.309998877');
+  assert.equal(normalizePhone('+49.30123456'), '+49.30123456');
+  assert.equal(normalizePhone('+41.44.1234567'), '+41.441234567');
+});
+
+test('normalizePhone: wirft ohne + oder ohne Ländercode-Punkt', () => {
+  assert.throws(() => normalizePhone('4930123456'));      // kein +
+  assert.throws(() => normalizePhone('+49 30 123456'));   // kein Punkt -> mehrdeutig
+  assert.throws(() => normalizePhone('+49.'));            // Nummer fehlt
+  assert.throws(() => normalizePhone('+49.abc'));         // Nicht-Ziffern
 });

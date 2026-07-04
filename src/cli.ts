@@ -39,6 +39,7 @@ import {
   tldHints,
   parsePeriod,
   normalizeCountryCode,
+  normalizePhone,
 } from './validate.js';
 import type {
   ContactType,
@@ -499,6 +500,7 @@ interface BuyOpts {
   renewalMode?: string;
   dryRun?: boolean;
   yesLive?: boolean;
+  yes?: boolean;
 }
 async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
   const fqdn = name.trim().toLowerCase();
@@ -564,12 +566,15 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
     // Doppelte Bestätigung (bei --dry-run übersprungen, weil nur Validierung).
     const testing = Boolean(opts.dryRun);
     if (!testing) {
-      const c1 = await confirm({
-        message: `${fqdn} für ${period.api} registrieren${price !== undefined ? ` (~${price.toFixed(2)} EUR)` : ''}?`,
-        initialValue: false,
-      });
-      if (isCancel(c1) || !c1) return void cancel('Abgebrochen, nichts gekauft.');
+      if (!opts.yes) {
+        const c1 = await confirm({
+          message: `${fqdn} für ${period.api} registrieren${price !== undefined ? ` (~${price.toFixed(2)} EUR)` : ''}?`,
+          initialValue: false,
+        });
+        if (isCancel(c1) || !c1) return void cancel('Abgebrochen, nichts gekauft.');
+      }
 
+      // Die getippte Bestätigung für LIVE-Käufe lässt sich NICHT per --yes überspringen.
       if (live) {
         const typed = await text({
           message: `Zur Bestätigung des LIVE-Kaufs den Domainnamen exakt eintippen (${fqdn})`,
@@ -623,61 +628,126 @@ async function cmdContactLs(): Promise<void> {
 }
 
 /* ────────────────────────── contact add ────────────────────────── */
-async function cmdContactAdd(): Promise<void> {
+interface ContactAddOpts {
+  type?: string;
+  name?: string;
+  org?: string;
+  street?: string;
+  pc?: string;
+  city?: string;
+  cc?: string;
+  email?: string;
+  voice?: string;
+}
+
+async function cmdContactAdd(opts: ContactAddOpts = {}): Promise<void> {
   const env = envFromOpts();
   intro(`${logo()} ${dim('contact add')}  ${envBadge(env)}`);
 
-  const type = await select({
-    message: 'Kontakttyp',
-    options: [
-      { value: 'person', label: 'Person (natürliche Person)' },
-      { value: 'org', label: 'Organisation / Firma' },
-      { value: 'role', label: 'Rolle (z. B. Hostmaster)' },
-    ],
-    initialValue: 'person',
-  });
-  if (isCancel(type)) return void cancel('Abgebrochen.');
+  // Non-interaktiv, wenn alle Pflichtfelder als Flags übergeben wurden.
+  const flagged = Boolean(opts.name && opts.street && opts.pc && opts.city && opts.email && opts.voice);
 
-  const name = await text({ message: 'Voller Name (Vor- und Nachname)', validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
-  if (isCancel(name)) return void cancel('Abgebrochen.');
+  let type: string;
+  let name: string;
+  let org: string;
+  let street: string;
+  let pc2: string;
+  let city: string;
+  let cc: string;
+  let email: string;
+  let voice: string;
 
-  const org = await text({ message: 'Firma / Organisation (optional)', placeholder: '—' });
-  if (isCancel(org)) return void cancel('Abgebrochen.');
+  if (flagged) {
+    type = (opts.type ?? 'person').toLowerCase();
+    if (!['person', 'org', 'role'].includes(type)) return die('--type muss person, org oder role sein.');
+    name = opts.name!.trim();
+    org = (opts.org ?? '').trim();
+    street = opts.street!.trim();
+    pc2 = opts.pc!.trim();
+    city = opts.city!.trim();
+    try {
+      cc = normalizeCountryCode(opts.cc ?? 'DE');
+    } catch (e) {
+      return die((e as Error).message);
+    }
+    email = opts.email!.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return die('--email ist keine gültige E-Mail-Adresse.');
+    try {
+      voice = normalizePhone(opts.voice!);
+    } catch (e) {
+      return die((e as Error).message);
+    }
+  } else {
+    const t = await select({
+      message: 'Kontakttyp',
+      options: [
+        { value: 'person', label: 'Person (natürliche Person)' },
+        { value: 'org', label: 'Organisation / Firma' },
+        { value: 'role', label: 'Rolle (z. B. Hostmaster)' },
+      ],
+      initialValue: opts.type ?? 'person',
+    });
+    if (isCancel(t)) return void cancel('Abgebrochen.');
+    type = t;
 
-  const street = await text({ message: 'Straße und Hausnummer', validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
-  if (isCancel(street)) return void cancel('Abgebrochen.');
+    const n = await text({ message: 'Voller Name (Vor- und Nachname)', initialValue: opts.name, validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
+    if (isCancel(n)) return void cancel('Abgebrochen.');
+    name = n.trim();
 
-  const pc2 = await text({ message: 'PLZ', validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
-  if (isCancel(pc2)) return void cancel('Abgebrochen.');
+    const o = await text({ message: 'Firma / Organisation (optional)', initialValue: opts.org, placeholder: '—' });
+    if (isCancel(o)) return void cancel('Abgebrochen.');
+    org = o.trim();
 
-  const city = await text({ message: 'Ort', validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
-  if (isCancel(city)) return void cancel('Abgebrochen.');
+    const st = await text({ message: 'Straße und Hausnummer', initialValue: opts.street, validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
+    if (isCancel(st)) return void cancel('Abgebrochen.');
+    street = st.trim();
 
-  const cc = await text({
-    message: 'Ländercode (ISO 3166-1 alpha-2, z. B. DE)',
-    initialValue: 'DE',
-    validate: (v) => {
-      try {
-        normalizeCountryCode(v);
-        return undefined;
-      } catch (e) {
-        return (e as Error).message;
-      }
-    },
-  });
-  if (isCancel(cc)) return void cancel('Abgebrochen.');
+    const p = await text({ message: 'PLZ', initialValue: opts.pc, validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
+    if (isCancel(p)) return void cancel('Abgebrochen.');
+    pc2 = p.trim();
 
-  const email = await text({
-    message: 'E-Mail',
-    validate: (v) => (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? undefined : 'Bitte eine gültige E-Mail.'),
-  });
-  if (isCancel(email)) return void cancel('Abgebrochen.');
+    const ci = await text({ message: 'Ort', initialValue: opts.city, validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.') });
+    if (isCancel(ci)) return void cancel('Abgebrochen.');
+    city = ci.trim();
 
-  const voice = await text({
-    message: 'Telefon (international, z. B. +49.30.1234567)',
-    validate: (v) => (v.trim() ? undefined : 'Pflichtfeld.'),
-  });
-  if (isCancel(voice)) return void cancel('Abgebrochen.');
+    const c = await text({
+      message: 'Ländercode (ISO 3166-1 alpha-2, z. B. DE)',
+      initialValue: opts.cc ?? 'DE',
+      validate: (v) => {
+        try {
+          normalizeCountryCode(v);
+          return undefined;
+        } catch (e) {
+          return (e as Error).message;
+        }
+      },
+    });
+    if (isCancel(c)) return void cancel('Abgebrochen.');
+    cc = normalizeCountryCode(c);
+
+    const e = await text({
+      message: 'E-Mail',
+      initialValue: opts.email,
+      validate: (v) => (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v.trim()) ? undefined : 'Bitte eine gültige E-Mail.'),
+    });
+    if (isCancel(e)) return void cancel('Abgebrochen.');
+    email = e.trim();
+
+    const vo = await text({
+      message: 'Telefon (international, z. B. +49.30123456)',
+      initialValue: opts.voice,
+      validate: (v) => {
+        try {
+          normalizePhone(v);
+          return undefined;
+        } catch (e) {
+          return (e as Error).message;
+        }
+      },
+    });
+    if (isCancel(vo)) return void cancel('Abgebrochen.');
+    voice = normalizePhone(vo);
+  }
 
   await withClient(env, async (client) => {
     const s = spinner();
@@ -685,14 +755,14 @@ async function cmdContactAdd(): Promise<void> {
     try {
       const id = await client.createContact({
         type: type as ContactType,
-        name: name.trim(),
-        org: org.trim() || undefined,
-        street: street.trim(),
-        pc: pc2.trim(),
-        city: city.trim(),
-        cc: normalizeCountryCode(cc),
-        email: email.trim(),
-        voice: voice.trim(),
+        name,
+        org: org || undefined,
+        street,
+        pc: pc2,
+        city,
+        cc,
+        email,
+        voice,
       });
       s.stop(`${ok('✓')} Kontakt angelegt.`);
       note(`${dim('Kontakt-ID:')} ${accent(String(id))}\n${dim('Nutzung:')} inwx domain buy <name> --registrant ${id}`, 'Handle');
@@ -751,12 +821,25 @@ export function run(argv: string[]): void {
     .option('--ns <liste>', 'Nameserver (kommasepariert)', 'ns.inwx.de,ns2.inwx.de')
     .option('--renewal-mode <modus>', 'Verlängerungsmodus (AUTORENEW, AUTOEXPIRE, AUTODELETE)')
     .option('--dry-run', 'nur validieren (testing=true), nicht registrieren')
+    .option('-y, --yes', 'Rückfrage überspringen (nur OT&E; LIVE braucht weiter die Tippbestätigung)')
     .option('--yes-live', 'ECHTE, kostenpflichtige Registrierung auf PROD erlauben')
     .action(cmdDomainBuy);
 
   const contact = program.command('contact').description('Domain-Kontakte (Handles) verwalten');
   contact.command('ls').alias('list').description('Kontakte auflisten').action(cmdContactLs);
-  contact.command('add').description('Neuen Kontakt interaktiv anlegen').action(cmdContactAdd);
+  contact
+    .command('add')
+    .description('Neuen Kontakt anlegen (interaktiv oder vollständig per Flags)')
+    .option('--type <typ>', 'person | org | role', 'person')
+    .option('--name <name>', 'Voller Name (Vor- und Nachname)')
+    .option('--org <org>', 'Firma / Organisation (optional)')
+    .option('--street <strasse>', 'Straße und Hausnummer')
+    .option('--pc <plz>', 'Postleitzahl')
+    .option('--city <ort>', 'Ort')
+    .option('--cc <land>', 'Ländercode ISO 3166-1 alpha-2', 'DE')
+    .option('--email <email>', 'E-Mail')
+    .option('--voice <telefon>', 'Telefon international, z. B. +49.30123456')
+    .action(cmdContactAdd);
 
   program.parseAsync(argv).catch((e) => {
     if (e instanceof ApiError) die(e.message);

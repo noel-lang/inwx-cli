@@ -235,7 +235,8 @@ export class Domrobot {
 
   async createContact(input: CreateContactInput): Promise<number> {
     const params: Record<string, unknown> = {
-      type: input.type,
+      // INWX erwartet den Typ in Großschreibung (PERSON | ORG | ROLE).
+      type: String(input.type).toUpperCase(),
       name: input.name,
       street: input.street,
       pc: input.pc,
