@@ -588,9 +588,10 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
         domain: fqdn,
         period: period.api,
         registrant,
-        admin: opts.admin ? Number(opts.admin) : undefined,
-        tech: opts.tech ? Number(opts.tech) : undefined,
-        billing: opts.billing ? Number(opts.billing) : undefined,
+        // INWX verlangt alle vier Kontakte; ohne explizite Flags den Registranten übernehmen.
+        admin: opts.admin ? Number(opts.admin) : registrant,
+        tech: opts.tech ? Number(opts.tech) : registrant,
+        billing: opts.billing ? Number(opts.billing) : registrant,
         ns,
         renewalMode: opts.renewalMode,
         testing,
