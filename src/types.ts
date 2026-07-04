@@ -87,13 +87,16 @@ export interface DomainPricesResData {
 }
 
 /* ── domain.list / domain.info ── */
+/** INWX liefert Datumswerte als getyptes Objekt (aus dem XML-RPC-datetime-Typ) oder als String. */
+export type ApiDate = string | { scalar?: string; timestamp?: number } | null;
+
 export interface DomainListEntry {
   roId: number;
   domain: string;
    'domain-ace'?: string;
   status?: string;
-  crDate?: string;
-  exDate?: string;
+  crDate?: ApiDate;
+  exDate?: ApiDate;
   registrant?: number;
   ns?: string[];
 }
@@ -108,8 +111,8 @@ export interface DomainInfoResData {
   domain: string;
   'domain-ace'?: string;
   period?: string;
-  crDate?: string;
-  exDate?: string;
+  crDate?: ApiDate;
+  exDate?: ApiDate;
   upDate?: string;
   transferLock?: boolean;
   status?: string;
@@ -132,6 +135,8 @@ export interface CreateDomainInput {
   billing?: number;
   ns?: string[];
   renewalMode?: string;
+  /** TLD-spezifische Zusatzdaten, z. B. { "ACKNOWLEDGE-SECURE-ONLY-APP": 1 }. */
+  extData?: Record<string, string | number>;
   /** true = nur Validierung, keine echte Registrierung. */
   testing?: boolean;
 }

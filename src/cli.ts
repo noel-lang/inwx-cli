@@ -32,6 +32,7 @@ import {
   availStyle,
   contactTable,
   domainTable,
+  apiDateStr,
 } from './ui.js';
 import {
   assertValidDomain,
@@ -40,6 +41,7 @@ import {
   parsePeriod,
   normalizeCountryCode,
   normalizePhone,
+  secureOnlyAckKey,
 } from './validate.js';
 import type {
   ContactType,
@@ -381,12 +383,13 @@ async function cmdDnsApply(file: string, opts: ApplyOpts): Promise<void> {
 async function cmdDomainCheck(names: string[]): Promise<void> {
   const env = envFromOpts();
   const checked: string[] = [];
+  const hints: string[] = [];
   for (const raw of names) {
     const name = raw.trim().toLowerCase();
     try {
       assertValidDomain(name);
       checked.push(name);
-      for (const hint of tldHints(name)) log.warn(warn(hint));
+      for (const hint of tldHints(name)) if (!hints.includes(hint)) hints.push(hint);
     } catch (e) {
       log.error(err(`${raw}: ${(e as Error).message}`));
     }
@@ -394,6 +397,8 @@ async function cmdDomainCheck(names: string[]): Promise<void> {
   if (!checked.length) return void die('Keine gültigen Domainnamen zum Prüfen.');
 
   await withClient(env, async (client) => {
+    // Hinweise erst nach dem Login, damit der Spinner nicht dazwischenfunkt.
+    for (const hint of hints) log.warn(warn(hint));
     const results: DomainCheckResult[] = await client.checkDomains(checked);
     console.log('');
     console.log(`  ${brand('domain check')} ${envBadge(env)}  ${dim(results.length + ' geprüft')}`);
@@ -477,8 +482,8 @@ async function cmdDomainInfo(name: string): Promise<void> {
       console.log(`  ${dim(k.padEnd(14))} ${String(v)}`);
     };
     line('Status', info.status);
-    line('Angelegt', String(info.crDate ?? '').slice(0, 10));
-    line('Läuft ab', String(info.exDate ?? '').slice(0, 10));
+    line('Angelegt', apiDateStr(info.crDate));
+    line('Läuft ab', apiDateStr(info.exDate));
     line('Registrant', info.registrant);
     line('Admin-C', info.admin);
     line('Tech-C', info.tech);
@@ -498,6 +503,7 @@ interface BuyOpts {
   billing?: string;
   ns?: string;
   renewalMode?: string;
+  ext?: string[];
   dryRun?: boolean;
   yesLive?: boolean;
   yes?: boolean;
@@ -527,16 +533,28 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
   }
   const ns = (opts.ns ?? 'ns.inwx.de,ns2.inwx.de').split(',').map((s) => s.trim()).filter(Boolean);
 
-  intro(`${logo()} ${dim('buy')}  ${envBadge(env)} ${accent(fqdn)}`);
-  for (const hint of tldHints(fqdn)) log.warn(warn(hint));
-
-  if (live) {
-    log.warn(err('ACHTUNG: --yes-live gesetzt. Dies ist eine ECHTE, KOSTENPFLICHTIGE Registrierung auf PROD.'));
-  } else {
-    log.info(dim('Läuft gegen das OT&E-Testsystem (keine echte Registrierung, keine Kosten). Für einen echten Kauf: --yes-live.'));
+  // TLD-Zusatzdaten aus --ext plus Auto-Bestätigung für Secure-only-TLDs (.app/.dev/.page).
+  const extData: Record<string, string | number> = {};
+  for (const kv of opts.ext ?? []) {
+    const eq = kv.indexOf('=');
+    if (eq < 1) return die(`--ext erwartet key=value, bekam "${kv}".`);
+    extData[kv.slice(0, eq).trim()] = kv.slice(eq + 1);
   }
+  const ackKey = secureOnlyAckKey(splitDomain(fqdn).tld);
+  if (ackKey && !(ackKey in extData)) extData[ackKey] = 1;
+
+  intro(`${logo()} ${dim('buy')}  ${envBadge(env)} ${accent(fqdn)}`);
 
   await withClient(env, async (client) => {
+    // Hinweise erst nach der Anmeldung, damit der Login-Spinner nicht dazwischenfunkt.
+    for (const hint of tldHints(fqdn)) log.warn(warn(hint));
+    if (ackKey) log.info(dim(`Secure-only-TLD: ${ackKey}=1 wird gesetzt.`));
+    if (live) {
+      log.warn(err('ACHTUNG: --yes-live gesetzt. Dies ist eine ECHTE, KOSTENPFLICHTIGE Registrierung auf PROD.'));
+    } else {
+      log.info(dim('Läuft gegen das OT&E-Testsystem (keine echte Registrierung, keine Kosten). Für einen echten Kauf: --yes-live.'));
+    }
+
     // Kostenanzeige + Verfügbarkeit aus domain.check.
     let price: number | undefined;
     const s = spinner();
@@ -599,6 +617,7 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
         billing: opts.billing ? Number(opts.billing) : registrant,
         ns,
         renewalMode: opts.renewalMode,
+        extData,
         testing,
       });
       s2.stop(
@@ -820,6 +839,15 @@ export function run(argv: string[]): void {
     .option('--billing <contactId>', 'Billing-C')
     .option('--ns <liste>', 'Nameserver (kommasepariert)', 'ns.inwx.de,ns2.inwx.de')
     .option('--renewal-mode <modus>', 'Verlängerungsmodus (AUTORENEW, AUTOEXPIRE, AUTODELETE)')
+    .option(
+      '--ext <keyval>',
+      'TLD-Zusatzdaten als key=value (mehrfach nutzbar)',
+      (v: string, acc: string[]) => {
+        acc.push(v);
+        return acc;
+      },
+      [] as string[],
+    )
     .option('--dry-run', 'nur validieren (testing=true), nicht registrieren')
     .option('-y, --yes', 'Rückfrage überspringen (nur OT&E; LIVE braucht weiter die Tippbestätigung)')
     .option('--yes-live', 'ECHTE, kostenpflichtige Registrierung auf PROD erlauben')

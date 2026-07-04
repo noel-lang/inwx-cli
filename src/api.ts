@@ -34,7 +34,9 @@ export class ApiError extends Error {
 
   constructor(res: DomrobotResponse | undefined, method?: string) {
     const msg = res?.msg || 'Unbekannter API-Fehler';
-    super(`INWX ${method ? method + ' ' : ''}fehlgeschlagen: ${msg} (Code ${res?.code})`);
+    // INWX legt die hilfreiche Detailbegründung ins reason-Feld (z. B. erlaubte Perioden).
+    const detail = res?.reason ? ` — ${res.reason}` : '';
+    super(`INWX ${method ? method + ' ' : ''}fehlgeschlagen: ${msg}${detail} (Code ${res?.code})`);
     this.name = 'ApiError';
     this.code = res?.code;
     this.reason = res?.reason;
@@ -218,10 +220,12 @@ export class Domrobot {
     if (input.billing !== undefined) params.billing = input.billing;
     if (input.ns && input.ns.length) params.ns = input.ns;
     if (input.renewalMode) params.renewalMode = input.renewalMode;
+    if (input.extData && Object.keys(input.extData).length) params.extData = input.extData;
     if (input.testing) params.testing = true;
 
     const r = await this.call<CreateDomainResData>('domain.create', params);
-    if (r.code !== 1000) throw new ApiError(r, 'domain.create');
+    // 1000 = Erfolg, 1001 = Erfolg mit ausstehender Aktion (z. B. Registry-Verarbeitung).
+    if (r.code !== 1000 && r.code !== 1001) throw new ApiError(r, 'domain.create');
     return r.resData ?? {};
   }
 

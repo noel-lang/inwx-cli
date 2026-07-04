@@ -230,13 +230,24 @@ export function contactTable(contacts: Contact[]): string {
   return head + '\n' + body;
 }
 
+/** Datumswert der INWX-API (String oder getyptes {scalar}-Objekt) auf YYYY-MM-DD kürzen. */
+export function apiDateStr(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.slice(0, 10);
+  if (typeof v === 'object' && 'scalar' in v) {
+    const s = (v as { scalar?: unknown }).scalar;
+    if (typeof s === 'string') return s.slice(0, 10);
+  }
+  return String(v);
+}
+
 /** Tabelle für `domain ls`. */
 export function domainTable(domains: DomainListEntry[]): string {
   if (!domains.length) return dim('  Keine Domains gefunden.');
   const rows = domains.map((d) => ({
     domain: String(d.domain ?? ''),
     status: String(d.status ?? ''),
-    exDate: String(d.exDate ?? '').slice(0, 10),
+    exDate: apiDateStr(d.exDate),
   }));
 
   const w = {
