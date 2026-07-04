@@ -49,12 +49,30 @@ Der Quellcode liegt in TypeScript unter `src/` und `bin/`, das ausführbare Erge
 ```bash
 npm run build     # tsc: src + bin + test -> dist/
 npm run dev -- domain check example.de   # baut und führt direkt aus (Args nach --)
-npm test          # baut und läuft node --test (ohne Netzwerk)
+npm test          # baut und läuft node --test
 ```
 
 Der `prepare`-Hook baut `dist` automatisch bei `npm install` und bei Installation via
 `npx`/`npm install -g github:…`. Das Binary ist in `package.json` auf `dist/bin/inwx.js`
 verdrahtet; veröffentlicht wird nur `dist` plus die Beispiel-Zonendatei.
+
+### Tests
+
+- **Unit-Tests** (`test/*.test.ts` außer `e2e`) laufen ohne Netzwerk: FQDN-Ableitung,
+  Perioden-/Ländercode-/Telefon-Normalisierung, TLD-Hinweise, Plan-Diff.
+- **E2E-Tests** (`test/e2e.test.ts`) sprechen das INWX-**OT&E-Testsystem** an, bewusst nur
+  READ-ONLY (Login, `domain.check`, `domain.getPrices`, `contact.list`, `domain.list`), damit
+  nichts registriert wird und die API nicht belastet wird. Sie laufen nur, wenn OT&E-Credentials
+  in der Umgebung stehen, sonst überspringen sie sich selbst:
+
+  ```bash
+  INWX_USER=… INWX_PASSWORD=… npm test        # inkl. E2E gegen OT&E
+  npm test                                     # nur Unit, E2E werden übersprungen
+  ```
+
+Der GitHub-Actions-Workflow (`.github/workflows/ci.yml`) baut, führt die Unit-Tests aus und
+lässt die E2E-Tests gegen OT&E laufen, sobald die Repo-Secrets `INWX_OTE_USER` /
+`INWX_OTE_PASSWORD` gesetzt sind (in Fork-PRs ohne Secrets werden sie übersprungen).
 
 ## Authentifizierung
 

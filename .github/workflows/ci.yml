@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Dependencies installieren
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Unit-Tests laufen immer. Die E2E-Tests (test/e2e.test.ts) sprechen das
+      # INWX-OT&E-Testsystem an und laufen nur, wenn die OT&E-Secrets gesetzt sind
+      # (also nicht in Fork-PRs). Ohne Secrets überspringen sie sich selbst.
+      # Bewusst nur READ-ONLY-Abläufe, um die API nicht zu belasten.
+      - name: Tests (Unit + OT&E-E2E)
+        run: npm test
+        env:
+          INWX_USER: ${{ secrets.INWX_OTE_USER }}
+          INWX_PASSWORD: ${{ secrets.INWX_OTE_PASSWORD }}
