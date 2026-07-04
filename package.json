@@ -15,6 +15,7 @@
   ],
   "scripts": {
     "build": "tsc",
+    "postbuild": "node -e \"require('fs').chmodSync('dist/bin/inwx.js', 0o755)\"",
     "dev": "tsc && node dist/bin/inwx.js",
     "start": "node dist/bin/inwx.js",
     "prepare": "npm run build",
