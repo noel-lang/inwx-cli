@@ -151,7 +151,7 @@ export function availStyle(avail: number): AvailStyle {
 }
 
 function formatPrice(price: number | undefined, currency = 'EUR'): string {
-  if (price === undefined || price === null) return '';
+  if (price === undefined || price === null || Number.isNaN(price)) return '';
   return `${price.toFixed(2)} ${currency}`;
 }
 

@@ -6,6 +6,9 @@ import type {
   CreateContactResData,
   CreateDomainInput,
   CreateDomainResData,
+  CreateDomainResult,
+  CreateNameserverZoneInput,
+  CreateNameserverZoneResData,
   CreateRecordInput,
   DnsRecord,
   DomainCheckResData,
@@ -20,6 +23,7 @@ import type {
   LoginResData,
   NameserverInfoResData,
   UpdateRecordInput,
+  UpdateDomainInput,
 } from './types.js';
 
 const ENDPOINTS: Record<Env, string> = {
@@ -152,6 +156,40 @@ export class Domrobot {
     return r.resData?.record ?? [];
   }
 
+  /** Legt eine DNS-Zone an. INWX erzeugt bei MASTER die SOA-/NS-Basisrecords. */
+  async createNameserverZone(input: CreateNameserverZoneInput): Promise<CreateNameserverZoneResData> {
+    const params: Record<string, unknown> = {
+      domain: input.domain,
+      type: input.type ?? 'MASTER',
+    };
+    if (input.ns?.length) params.ns = input.ns;
+    if (input.masterIp) params.masterIp = input.masterIp;
+    if (input.soaEmail) params.soaEmail = input.soaEmail;
+    if (input.ignoreExisting) params.ignoreExisting = true;
+    if (input.testing) params.testing = true;
+    const r = await this.call<CreateNameserverZoneResData>('nameserver.create', params);
+    if (r.code !== 1000) throw new ApiError(r, 'nameserver.create');
+    return r.resData ?? {};
+  }
+
+  /** Stellt eine MASTER-Zone bereit; bestehende Zonen bleiben unverändert. */
+  async ensureNameserverZone(domain: string, options: { ns: string[]; testing?: boolean }): Promise<'created' | 'exists'> {
+    try {
+      await this.listRecords(domain);
+      return 'exists';
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 2303) throw error;
+    }
+    await this.createNameserverZone({
+      domain,
+      type: 'MASTER',
+      ns: options.ns,
+      ignoreExisting: true,
+      testing: options.testing,
+    });
+    return 'created';
+  }
+
   async createRecord({ domain, name, type, content, ttl = 3600, prio }: CreateRecordInput) {
     const params: Record<string, unknown> = { domain, name, type, content, ttl };
     if (prio !== undefined && prio !== null && prio !== '') params.prio = Number(prio);
@@ -182,7 +220,11 @@ export class Domrobot {
   async checkDomains(names: string[]): Promise<DomainCheckResult[]> {
     const r = await this.call<DomainCheckResData>('domain.check', { domain: names });
     if (r.code !== 1000) throw new ApiError(r, 'domain.check');
-    return r.resData?.domain ?? [];
+    // Die INWX-API liefert `price` teils als String; hier zu number normalisieren.
+    return (r.resData?.domain ?? []).map((d) => ({
+      ...d,
+      price: d.price !== undefined && d.price !== null ? Number(d.price) : undefined,
+    }));
   }
 
   /** Preisliste für eine oder mehrere TLDs. */
@@ -209,7 +251,7 @@ export class Domrobot {
    * Registriert eine Domain (domain.create).
    * Mit `testing: true` validiert die API nur, ohne zu registrieren.
    */
-  async createDomain(input: CreateDomainInput): Promise<CreateDomainResData> {
+  async createDomain(input: CreateDomainInput): Promise<CreateDomainResult> {
     const params: Record<string, unknown> = {
       domain: input.domain,
       registrant: input.registrant,
@@ -226,7 +268,22 @@ export class Domrobot {
     const r = await this.call<CreateDomainResData>('domain.create', params);
     // 1000 = Erfolg, 1001 = Erfolg mit ausstehender Aktion (z. B. Registry-Verarbeitung).
     if (r.code !== 1000 && r.code !== 1001) throw new ApiError(r, 'domain.create');
-    return r.resData ?? {};
+    return {
+      ...(r.resData ?? {}),
+      apiCode: r.code,
+      apiMessage: r.msg,
+      apiReason: r.reason,
+    };
+  }
+
+
+  /** Aktualisiert Domainattribute, etwa die Nameserver. */
+  async updateDomain(input: UpdateDomainInput): Promise<void> {
+    const params: Record<string, unknown> = { domain: input.domain };
+    if (input.ns?.length) params.ns = input.ns;
+    if (input.testing) params.testing = true;
+    const r = await this.call('domain.update', params);
+    if (r.code !== 1000 && r.code !== 1001) throw new ApiError(r, 'domain.update');
   }
 
   /* ── Kontakte ── */

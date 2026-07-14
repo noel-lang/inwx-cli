@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toFqdn, generateTotp } from '../src/api.js';
+import { Domrobot, toFqdn, generateTotp } from '../src/api.js';
 
 test('toFqdn: Apex und leere Namen', () => {
   assert.equal(toFqdn('@', 'example.com'), 'example.com');
@@ -35,4 +35,36 @@ test('generateTotp: toleriert Leerzeichen und Kleinschreibung im Secret', () => 
 
 test('generateTotp: liefert 6 Ziffern für aktuellen Zeitpunkt', () => {
   assert.match(generateTotp(RFC_SECRET), /^\d{6}$/);
+});
+
+test('createNameserverZone: sendet MASTER-Zone mit mindestens zwei Nameservern', async (t) => {
+  const originalFetch = globalThis.fetch;
+  let requestBody: unknown;
+  globalThis.fetch = (async (_url, init) => {
+    requestBody = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ code: 1000, resData: { roId: 42 } }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+
+  const result = await new Domrobot('ote').createNameserverZone({
+    domain: 'example.de',
+    type: 'MASTER',
+    ns: ['ns.inwx.de', 'ns2.inwx.de'],
+    testing: true,
+  });
+
+  assert.equal(result.roId, 42);
+  assert.deepEqual(requestBody, {
+    method: 'nameserver.create',
+    params: {
+      lang: 'en',
+      domain: 'example.de',
+      type: 'MASTER',
+      ns: ['ns.inwx.de', 'ns2.inwx.de'],
+      testing: true,
+    },
+  });
 });

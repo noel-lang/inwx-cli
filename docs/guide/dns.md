@@ -10,6 +10,16 @@ inwx dns ls example.com
 
 Zeigt eine farbige, ausgerichtete Tabelle aller Records der Zone (ID, Typ, Name, Content, TTL, Prio).
 
+## Zone anlegen
+
+```bash
+inwx dns zone add example.de
+inwx --ote dns zone add example.de --dry-run
+```
+
+Der Befehl erzeugt eine INWX-MASTER-Zone mit `ns.inwx.de`, `ns2.inwx.de` sowie dem
+SOA-Basisrecord. `domain buy` führt diesen Schritt beim Default-Nameserverset automatisch aus.
+
 ## Einzelne Records
 
 ```bash

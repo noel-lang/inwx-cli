@@ -50,6 +50,10 @@ ganz ohne Punkt ist mehrdeutig und wird abgelehnt.
 
 `domain buy` registriert über `domain.create` und ist bewusst mehrfach abgesichert.
 
+Beim Default `ns.inwx.de,ns2.inwx.de` legt die CLI vor der Registrierung automatisch die
+INWX-MASTER-Zone an. Die Zone enthält dadurch rechtzeitig autoritative SOA-/NS-Records für die
+Nameserverprüfung der Registry.
+
 ```bash
 # 1) Testkauf gegen OT&E (Standard, keine Kosten, keine echte Registrierung)
 inwx domain buy meine-idee.de --registrant 12345
@@ -72,6 +76,12 @@ inwx domain buy meine-idee.de --registrant 12345 --yes-live
 - INWX verlangt alle vier Kontakt-Handles. Ohne `--admin/--tech/--billing` übernimmt die CLI
   den Registranten.
 :::
+
+Bestehende Nameserver lassen sich separat aktualisieren:
+
+```bash
+inwx domain ns example.de --ns ns.inwx.de,ns2.inwx.de
+```
 
 ### Secure-only-TLDs und Zusatzdaten
 

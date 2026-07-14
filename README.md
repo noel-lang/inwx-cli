@@ -198,6 +198,10 @@ inwx domain info example.de    # Status, Ablaufdatum, Handles, Nameserver (domai
 
 Registriert eine Domain über `domain.create`. Der Befehl ist bewusst mehrfach abgesichert:
 
+Wenn das Default-Set `ns.inwx.de,ns2.inwx.de` verwendet wird, stellt die CLI **vor**
+`domain.create` automatisch eine INWX-MASTER-Zone mit SOA- und NS-Basisrecords bereit. Damit
+können Registries wie DENIC die Nameserver bei der Registrierung autoritativ prüfen.
+
 ```bash
 # 1) Testkauf gegen OT&E (Standard, keine Kosten, keine echte Registrierung)
 inwx domain buy meine-idee.de --registrant 12345
@@ -233,6 +237,14 @@ inwx domain buy meine-idee.de --registrant 12345 --yes-live
   OT&E**; bei `--yes-live` muss der Domainname trotzdem exakt eingetippt werden.
 - INWX verlangt alle vier Kontakt-Handles. Werden `--admin/--tech/--billing` nicht gesetzt,
   übernimmt die CLI den Registranten.
+
+Eine Zone lässt sich auch explizit anlegen und eine bestehende Domain erneut auf das
+Default-Set setzen:
+
+```bash
+inwx dns zone add example.de
+inwx domain ns example.de --yes
+```
 
 ## Kontakte
 
@@ -407,8 +419,8 @@ Die CLI spricht die DomRobot-API im JSON-RPC-Format an:
 | `ote`    | `https://api.ote.domrobot.com/jsonrpc/` |
 
 Genutzte Methoden: `account.login`, `account.unlock`, `account.logout`,
-`nameserver.info`, `nameserver.createRecord`, `nameserver.updateRecord`, `nameserver.deleteRecord`,
-`domain.check`, `domain.getPrices`, `domain.list`, `domain.info`, `domain.create`,
+`nameserver.info`, `nameserver.create`, `nameserver.createRecord`, `nameserver.updateRecord`, `nameserver.deleteRecord`,
+`domain.check`, `domain.getPrices`, `domain.list`, `domain.info`, `domain.create`, `domain.update`,
 `contact.list`, `contact.create`.
 
 Die Session wird über das von `account.login` gesetzte Cookie gehalten und bei Folge-Requests

@@ -52,6 +52,7 @@ import type {
 } from './types.js';
 
 const program = new Command();
+const DEFAULT_INWX_NAMESERVERS = ['ns.inwx.de', 'ns2.inwx.de'];
 
 function envFromOpts(): Env {
   return program.opts().ote ? 'ote' : 'prod';
@@ -231,6 +232,36 @@ async function cmdDnsLs(domain: string): Promise<void> {
     console.log('');
     console.log(recordTable(records));
     console.log('');
+  });
+}
+
+/* ────────────────────────── dns zone add ────────────────────────── */
+interface DnsZoneAddOpts {
+  soaEmail?: string;
+  dryRun?: boolean;
+}
+async function cmdDnsZoneAdd(domain: string, opts: DnsZoneAddOpts): Promise<void> {
+  const env = envFromOpts();
+  const fqdn = domain.trim().toLowerCase();
+  try {
+    assertValidDomain(fqdn);
+  } catch (e) {
+    return die((e as Error).message);
+  }
+  await withClient(env, async (client) => {
+    const res = await client.createNameserverZone({
+      domain: fqdn,
+      type: 'MASTER',
+      ns: DEFAULT_INWX_NAMESERVERS,
+      ignoreExisting: true,
+      soaEmail: opts.soaEmail,
+      testing: Boolean(opts.dryRun),
+    });
+    log.success(
+      opts.dryRun
+        ? `${ok('✓')} DNS-Zone validiert (nicht angelegt).`
+        : `${ok('+')} MASTER-Zone ${accent(fqdn)} angelegt${res.roId ? ` (roId ${res.roId})` : ''}.`,
+    );
   });
 }
 
@@ -494,6 +525,43 @@ async function cmdDomainInfo(name: string): Promise<void> {
   });
 }
 
+/* ────────────────────────── domain ns ────────────────────────── */
+interface DomainNsOpts {
+  ns?: string;
+  dryRun?: boolean;
+  yes?: boolean;
+}
+async function cmdDomainNs(name: string, opts: DomainNsOpts): Promise<void> {
+  const env = envFromOpts();
+  const fqdn = name.trim().toLowerCase();
+  try {
+    assertValidDomain(fqdn);
+  } catch (e) {
+    return die((e as Error).message);
+  }
+  const ns = (opts.ns ?? DEFAULT_INWX_NAMESERVERS.join(','))
+    .split(',')
+    .map((server) => server.trim().toLowerCase())
+    .filter(Boolean);
+  if (ns.length < 2) return die('Mindestens zwei Nameserver sind erforderlich.');
+
+  await withClient(env, async (client) => {
+    if (!opts.dryRun && !opts.yes) {
+      const accepted = await confirm({
+        message: `Nameserver von ${fqdn} auf ${ns.join(', ')} setzen?`,
+        initialValue: false,
+      });
+      if (isCancel(accepted) || !accepted) return void cancel('Abgebrochen.');
+    }
+    await client.updateDomain({ domain: fqdn, ns, testing: Boolean(opts.dryRun) });
+    log.success(
+      opts.dryRun
+        ? `${ok('✓')} Nameserver-Änderung validiert (nicht ausgeführt).`
+        : `${ok('✓')} Nameserver-Änderung für ${accent(fqdn)} übermittelt.`,
+    );
+  });
+}
+
 /* ────────────────────────── domain buy ────────────────────────── */
 interface BuyOpts {
   period?: string;
@@ -507,6 +575,10 @@ interface BuyOpts {
   dryRun?: boolean;
   yesLive?: boolean;
   yes?: boolean;
+}
+function registryDiagnostic(result: Record<string, unknown>): string | undefined {
+  const diagnostic = JSON.stringify(result, null, 2);
+  return /\b(?:warning|failed|error|refused)\b/i.test(diagnostic) ? diagnostic : undefined;
 }
 async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
   const fqdn = name.trim().toLowerCase();
@@ -531,7 +603,9 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
   } catch (e) {
     return die((e as Error).message);
   }
-  const ns = (opts.ns ?? 'ns.inwx.de,ns2.inwx.de').split(',').map((s) => s.trim()).filter(Boolean);
+  const ns = (opts.ns ?? DEFAULT_INWX_NAMESERVERS.join(',')).split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const usesDefaultInwxNameservers =
+    ns.length === DEFAULT_INWX_NAMESERVERS.length && DEFAULT_INWX_NAMESERVERS.every((server) => ns.includes(server));
 
   // TLD-Zusatzdaten aus --ext plus Auto-Bestätigung für Secure-only-TLDs (.app/.dev/.page).
   const extData: Record<string, string | number> = {};
@@ -604,6 +678,26 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
       log.info(dim('--dry-run: domain.create wird mit testing=true nur validiert, nichts registriert.'));
     }
 
+    // DENIC und andere Registries prüfen die Delegation sofort. Deshalb muss die
+    // INWX-Zone vor domain.create existieren, wenn das CLI-Default verwendet wird.
+    if (usesDefaultInwxNameservers) {
+      const zoneSpinner = spinner();
+      zoneSpinner.start(testing ? 'Validiere INWX-DNS-Zone…' : 'Stelle INWX-DNS-Zone bereit…');
+      try {
+        const result = await client.ensureNameserverZone(fqdn, { ns, testing });
+        zoneSpinner.stop(
+          result === 'exists'
+            ? `${ok('✓')} DNS-Zone existiert.`
+            : testing
+              ? `${ok('✓')} DNS-Zone kann angelegt werden (testing).`
+              : `${ok('✓')} DNS-Zone angelegt.`,
+        );
+      } catch (e) {
+        zoneSpinner.stop(err('✗ DNS-Zone konnte nicht bereitgestellt werden.'));
+        return void die((e as Error).message);
+      }
+    }
+
     const s2 = spinner();
     s2.start(testing ? 'Validiere Registrierung (testing)…' : 'Registriere Domain…');
     try {
@@ -620,6 +714,14 @@ async function cmdDomainBuy(name: string, opts: BuyOpts): Promise<void> {
         extData,
         testing,
       });
+      const diagnostic = registryDiagnostic(res);
+      if (res.apiCode === 1001 || diagnostic) {
+        s2.stop(warn('⚠ Auftrag angenommen, aber Registry-Verarbeitung ist ausstehend oder fehlerhaft.'));
+        if (diagnostic) log.warn(warn(diagnostic));
+        else if (res.apiMessage) log.warn(warn(res.apiMessage));
+        process.exitCode = 1;
+        return;
+      }
       s2.stop(
         testing
           ? `${ok('✓')} Validierung erfolgreich (nichts registriert).`
@@ -808,6 +910,13 @@ export function buildProgram(): Command {
 
   const dns = program.command('dns').description('DNS-Records verwalten');
   dns.command('ls <domain>').alias('list').description('Alle Records einer Zone anzeigen').action(cmdDnsLs);
+  const dnsZone = dns.command('zone').description('DNS-Zonen verwalten');
+  dnsZone
+    .command('add <domain>')
+    .description('INWX-MASTER-Zone inklusive SOA-/NS-Basis anlegen')
+    .option('--soa-email <email>', 'E-Mail-Adresse für den SOA-Record')
+    .option('--dry-run', 'nur validieren (testing=true), nicht anlegen')
+    .action(cmdDnsZoneAdd);
   dns
     .command('add <domain> <name> <type> <content>')
     .description('Einzelnen Record anlegen')
@@ -831,6 +940,13 @@ export function buildProgram(): Command {
   domain.command('ls').alias('list').description('Eigene Domains auflisten').action(cmdDomainLs);
   domain.command('info <name>').description('Details zu einer eigenen Domain').action(cmdDomainInfo);
   domain
+    .command('ns <name>')
+    .description('Nameserver einer Domain aktualisieren')
+    .option('--ns <liste>', 'Nameserver (kommasepariert)', DEFAULT_INWX_NAMESERVERS.join(','))
+    .option('--dry-run', 'nur validieren (testing=true), nicht ändern')
+    .option('-y, --yes', 'Rückfrage überspringen')
+    .action(cmdDomainNs);
+  domain
     .command('buy <name>')
     .description('Domain registrieren (Standard: OT&E-Test; PROD nur mit --yes-live)')
     .option('--period <dauer>', 'Registrierungsdauer, z. B. 1Y', '1Y')
@@ -838,7 +954,7 @@ export function buildProgram(): Command {
     .option('--admin <contactId>', 'Admin-C')
     .option('--tech <contactId>', 'Tech-C')
     .option('--billing <contactId>', 'Billing-C')
-    .option('--ns <liste>', 'Nameserver (kommasepariert)', 'ns.inwx.de,ns2.inwx.de')
+    .option('--ns <liste>', 'Nameserver (kommasepariert)', DEFAULT_INWX_NAMESERVERS.join(','))
     .option('--renewal-mode <modus>', 'Verlängerungsmodus (AUTORENEW, AUTOEXPIRE, AUTODELETE)')
     .option(
       '--ext <keyval>',

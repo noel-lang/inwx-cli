@@ -30,7 +30,24 @@ export interface DnsRecord {
 }
 
 export interface NameserverInfoResData {
+  roId?: number;
+  domain?: string;
+  type?: string;
   record?: DnsRecord[];
+}
+
+export interface CreateNameserverZoneInput {
+  domain: string;
+  type?: 'MASTER' | 'SLAVE';
+  ns?: string[];
+  masterIp?: string;
+  soaEmail?: string;
+  ignoreExisting?: boolean;
+  testing?: boolean;
+}
+
+export interface CreateNameserverZoneResData {
+  roId?: number;
 }
 
 export interface CreateRecordInput {
@@ -145,6 +162,19 @@ export interface CreateDomainResData {
   roId?: number;
   price?: number;
   currency?: string;
+  [key: string]: unknown;
+}
+
+export interface CreateDomainResult extends CreateDomainResData {
+  apiCode: number;
+  apiMessage?: string;
+  apiReason?: unknown;
+}
+
+export interface UpdateDomainInput {
+  domain: string;
+  ns?: string[];
+  testing?: boolean;
 }
 
 /* ── contact ── */
